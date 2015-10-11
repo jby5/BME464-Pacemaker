@@ -1,8 +1,8 @@
 /* BME 464 - Ventricle processor code 
  * Student: Jessica Yan
- * PIC18F1827 USED FOR THIS ELECTRODE
+ * PIC18F46K22 USED FOR THIS ELECTRODE
  */
-//#include "Lcd.h"
+#include "Lcd.h"
 #include <delays.h>
 #include <p18f46k22.h>
 #include "adc.h"
@@ -39,16 +39,22 @@ void main(void)
     SysInit();
     //LCDClear();
     timer2 = 0; //implement this w/ internal oscillator
-
+    //LCDGoto(0,0);
+    //LCDWriteStr("Started");
     while(1)
     {
         stateV = 0;
         //ADC conversion
         ADCON0bits.GO_DONE = 1; 
-        while(ADCON0bits.GO_DONE!=0);
+        while(ADCON0bits.GO_DONE!=0); //wait to finish conversion
         
-        if(ADRESH>125){
+        if(ADRESH>200){ //ADRESH = 8MSB
             LATBbits.LATB0 = 1; //output to pin RB0
+            //LCDGoto(0,0);
+            //LCDPutByte(ADRESH);
+        }
+        else{
+            LATBbits.LATB0 = 0;
         }
       
         //check for the signal from atrial processor
@@ -60,7 +66,6 @@ void main(void)
             
             //check for normal ventricle signal
             processV();    
-
             producePulse();
         }
 	*/
@@ -71,25 +76,30 @@ void main(void)
 void SysInit(void){
     OSCCON=0b01010110; //4 MHz internal oscillator
 
-    //Set up analog in for signal 
+    //Set up analog in for hi-f signal 
     //ANSELBbits.ANSB0=0; //Digital
     //TRISAbits.RA4=1; //Input
     //TRISBbits.RB0=1; //Input
 
-    //Set up ADC for signal 
+    //Set up ADC for hi-f signal 
     
 
     //Set up analog in for EGM
-    ANSELA=0b11111111; //PORTA analog
-    TRISA = 0b11111111; //Input
+    //ANSELA=0b11111111; //PORTA analog
+    ANSELAbits.ANSA0 = 1; //pin A0 is analog 
+    TRISA = 0b11111111; //PORTA all input
     
     //Set up ADC for EGM
-    ADCON1 = 0b00001110;
-    ADCON0 = 0x00; 
-    ADCON2 = 0b00001000;
+    ADCON1 = 0b00001101;  //Vref-, VDD ref, AN0 analog
+    ADCON0 = 0x00; // clear ADCON0, select AN0
+    ADCON2 = 0b00001000; //left justified                                                                                                                                       tified, Tacq = 2Tad, Tad = 2*Tosc
     ADCON0bits.ADON = 0x01; //enable ADC module 
     
-    //Set up digital out for pulse
+    //Set up DAC to test ADC
+    //VREFCON1 = 0b11000001; //enable dac, use Vdd/Vref- as refs, don't output on DACOUT pin
+    //VREFCON2 = ADRESH>>3; //set DAC level equal to 5MSB of ADC result
+    
+    //Set up digital out for pulse (5V))
     ANSELB = 0x00; //digital
     TRISB = 0x00; //output
     
@@ -112,6 +122,8 @@ void SysInit(void){
     //Set up timer2 //need to do this
 }
 
+
+
 void processV(void){
     int slewThresh = 0; 
     int ampThresh = 0;
@@ -128,11 +140,10 @@ void processV(void){
         }
         Delay10KTCYx(1); //10ms 
     }
-    
+ 
     /*
     //calculate avg slew rate
     int slewAvg = slewSum/4;
-
     //if amplitude + slew rate passed threshold, stateA = 1
     if(EGMVals[5]>ampThresh && slewAvg>slewThresh){
         stateV = 1;
@@ -149,6 +160,7 @@ void processV(void){
     else{ timer2 = 0};
 }*/
 
+/*
 int detect(void){
     //check for values past threshold for certain duration
     int i=0; 
@@ -163,6 +175,7 @@ int detect(void){
     }
     return 1;
 }
+*/
 
 /*
 //High priority interrupt
@@ -172,12 +185,10 @@ void InterruptVectorHigh (void){
     goto High_Priority_ISR
   _endasm
 }
-
 #pragma interrupt High_Priority_ISR
 void High_Priority_ISR(void){
     RTC_ISR(); //Call real-time clock service routine
 }
-
 //Called every second by the interrupt
 void RTC_ISR (void){
     if (PIR1bits.TMR1IF)            // If timer overflowed
@@ -189,4 +200,3 @@ void RTC_ISR (void){
     }
 }
 */
-
