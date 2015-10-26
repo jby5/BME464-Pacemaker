@@ -23,7 +23,7 @@ unsigned char A_thresh; //threshold for positive detection of atrial electrogram
 unsigned char V_thresh; //threshold for positive detection of ventricle electrogram
 unsigned char pulse_level; //generated pulse signal strength
 int stateV;
-int signalThresh = 3; //3V 
+int detected;  
 int timer1;
 int timer2; 
 int RP;
@@ -33,7 +33,7 @@ int EGMmax;
 //Function definitions
 void processV(void);
 void producePulse(void);
-int detect(void);
+void detect(void);
 void SysInit(void);
 void High_Priority_ISR(void);
 void RTC_ISR(void);
@@ -67,13 +67,12 @@ void main(void)
     SysInit();
     timer2 = 0; //implement this w/ internal oscillator
     timer1 = 0;
+    stateV = 0;
     while(1)
-    {
-        
-        
-        stateV = 0;
+    {     
         //check for the signal from atrial processor
-        if (detect()){ 
+        detect();
+        //if (detect()){ 
             //restart timer1
             //TMR1H = 0; 
             //TMR1L = 0; 
@@ -81,9 +80,9 @@ void main(void)
             //while(timer2<RP){}; //don't do anything during refractory period
             
             //check for normal ventricle signal
-            processV();    
+            //processV();    
             //producePulse();
-        }	
+        //}	
 	}
 }
 
@@ -91,17 +90,28 @@ void main(void)
 void SysInit(void){
     OSCCON=0b01010110; //4 MHz internal oscillator
 
-    //Set up analog in for hi-f signal on A2 
-    //ANSELAbits.ANSA2 = 1; //pin A2 is analog
-    //TRISAbits.RA2 = 1; //A2 input
-    //ADCON0bits.CHS=0b00010; //AN2
+    //Set up analog in for hi-f signal detection on A2 
+    ANSELBbits.ANSB3 = 1; //pin B3 is analog
+    TRISBbits.RB3 = 1; //B3 input
     
-    //Set up ADC for hi-f signal 
+    //Set up comparator for hi-f signal detection  
+    //TRISAbits.RA4 = 0; // C1OUT = A4 output
     
-
+    CM1CON0bits.C1OE = 1; //enable output onto C1OUT (A4)
+    CM1CON0bits.C1POL = 1; //inverted
+    CM1CON0bits.C1SP = 1; //normal power mode
+    CM1CON0bits.C1R = 1; //Vin+ at FVR = 2.048V
+    CM1CON0bits.C1CH = 10; //Vin- at C12IN2- pin (RB3)
+    CM2CON1bits.C1RSEL = 1; //select FVR
+    
+    //Set up fixed voltage reference of 2.048V
+    VREFCON0bits.FVREN = 1;
+    VREFCON0bits.FVRS = 11;
+    
+    
     //Set up analog in for EGM on A0
     ANSELAbits.ANSA0 = 1; //pin A0 is analog 
-    TRISAbits.RA0 = 1; //PORTA all input
+    TRISAbits.RA0 = 1; //A0 input
     
     //Set up ADC for EGM input
     ADCON0 = 0x00; // clear ADCON0, select AN0
@@ -111,19 +121,9 @@ void SysInit(void){
     ADCON2bits.ADCS=010; //FOSC/32tified, Tacq = 2Tad, Tad = 2*Tosc
     ADCON0bits.ADON = 0x01; //enable ADC module 
     
-    //Set up DAC for output
-    //VREFCON1 = 0b11000001; //enable dac, use Vdd/Vref- as refs, don't output on DACOUT pin
-    //VREFCON2 = ADRESH>>3; //set DAC level equal to 5MSB of ADC result
-    
     //Set up digital out for pulse (5V))
     ANSELB = 0x00; //digital
     TRISB = 0x00; //output
-    
-    //Set up LCD
-    ANSELD = 0x00;
-    TRISD = 0x00; //Digital out
-
-    //LCDInit(); //Start LCD
     
     //Set up timer1
     TMR1H  = One_Sec; 
@@ -141,8 +141,8 @@ void SysInit(void){
 
 void processV(void){
     int slewThresh = 0; 
-    int ampThresh = 1*255/5; //1V 
-    //int dt = 0.01;
+    int ampThresh = 1.5*255/5.5; //1V 
+    int dt = 1; //10ms
     int EGMVals[5];
     int slewVals[4];
     int slewSum = 0;
@@ -154,63 +154,64 @@ void processV(void){
         ADCON0bits.GO = 1; 
         while(ADCON0bits.GO==0){}; //wait to finish conversion
         EGMVals[i] = ADRESH; //replace with correct pin
-        if(i<4){
-            slewVals[i] = (EGMVals[i+1]-EGMVals[i]); //replace with correct pin    
-            slewSum += slewVals[i];
+        
+        if(i>0){
+            slewVals[i] = (EGMVals[i]-EGMVals[i-1])/dt; //replace with correct pin    
+            //slewSum += slewVals[i];
+        
         }
-        //Delay10KTCYx(1); //10ms 
-        Delay10TCYx(1); //1ms?
+        
+        //slewVal = EGMVals[4]-EGMVals[0]; 
+        Delay1KTCYx(10); //10ms 
     }
 
     //calculate avg slew rate
-    slewAvg = slewSum/4;
+    //slewAvg = slewSum/4;
+    slewAvg = EGMVals[4] - EGMVals[0];
+    
     //if amplitude + slew rate passed threshold, stateV = 1  
-    if(EGMVals[4]>ampThresh && slewAvg>slewThresh){   
+    if(EGMVals[4]>ampThresh){   
+        LATBbits.LATB0 = 1; 
         stateV = 1;
-        LATBbits.LATB1 = 1; 
-        //restart timer2
+        if (slewAvg>slewThresh){
+            LATBbits.LATB1 = 1; 
+            //restart timer2
+        } else{
+            LATBbits.LATB1 = 0;
+        }
     } else {
         stateV = 0;
-        LATBbits.LATB1 = 0; 
-    } 
-         
+        LATBbits.LATB0 = 0; //amplitude too low
+        LATBbits.LATB1 = 0; //slew rate too low
+    }         
 }
 
 void producePulse(void){  //this could be done on an interrupt?
     //if atrial sensed but ventricle not sensed and timer1 too long, output signal
-        LATBbits.LATB0 = 1; //output to pin RB0, according to book ~0.1-2ms
-        timer2 = 0;
-        Delay10KTCYx(10); //delay 1s I think
-        //Delay10TCYx(100); //every 100 = 1ms
-        LATBbits.LATB0 = 0;
-    /*
-    int expected = 0;
-    if(timer1>expected && stateV = 0){ //need to define expected
+    if(timer1==1 && stateV == 0){ //need to define expected
         //generate square pulse with PWM
         LATBbits.LATB0 = 1; //output to pin RB0, according to book ~0.1-2ms
         timer2 = 0;
         Delay10TCYx(100); //every 100 = 1ms
-        LATBbits.LATB0 = 0;        
+        LATBbits.LATB0 = 0;
+        timer1 = 0; //set timer1 back to 0
     }
     else{
         timer2 = 0;
+        stateV = 0; //reset stateV back to 0
     }
-     */
 }
 
-int detect(void){  //check for values past threshold on analog pin A2
-    //THIS ADC DOESN'T WORK YET
-    //ADCON0bits.CHS=0b00010; //AN2
-    //ADCON0bits.GO=1; //Start conversion
-    //while(ADCON0bits.GO==1){}; //Wait for finish
-    
-    if(ADRESH > 128){ //digital in of signal 
-        Delay10TCYx(100); //every 100 = 1ms
-        return 1;
+void detect(void){  //check for values past threshold on digital output A4
+    CM1CON0bits.C1ON = 1; 
+    //while(VREFCON0bits.FVRST==0){}; //wait
+    if(CM1CON0bits.C1OUT ==1){ //result of comparator 
+        //Delay10TCYx(100); //every 100 = 1ms
+        detected = 1;
+        LATBbits.LATB0 = 1;
     }
     else {
-        return 0; 
+        LATBbits.LATB0 = 0;
+        detected = 0; 
     }
-    
-    //return 1;
 }
