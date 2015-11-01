@@ -72,17 +72,13 @@ void main(void)
     {     
         //check for the signal from atrial processor
         detect();
-        //if (detect()){ 
-            //restart timer1
-            //TMR1H = 0; 
-            //TMR1L = 0; 
-            
-            //while(timer2<RP){}; //don't do anything during refractory period
-            
+        
+        if (detected == 1){                       
             //check for normal ventricle signal
-            //processV();    
-            //producePulse();
-        //}	
+            processV();    
+            producePulse();
+        }
+        	
 	}
 }
 
@@ -96,17 +92,20 @@ void SysInit(void){
     
     //Set up comparator for hi-f signal detection  
     //TRISAbits.RA4 = 0; // C1OUT = A4 output
-    
+    CM1CON0bits.C1ON = 1; 
     CM1CON0bits.C1OE = 1; //enable output onto C1OUT (A4)
     CM1CON0bits.C1POL = 1; //inverted
     CM1CON0bits.C1SP = 1; //normal power mode
-    CM1CON0bits.C1R = 1; //Vin+ at FVR = 2.048V
-    CM1CON0bits.C1CH = 10; //Vin- at C12IN2- pin (RB3)
+    CM1CON0bits.C1R = 1; //Vin+ at FVR = 4.098V
+    CM1CON0bits.C1CH = 0b10; //Vin- at C12IN2- pin (RB3)
     CM2CON1bits.C1RSEL = 1; //select FVR
     
-    //Set up fixed voltage reference of 2.048V
+    //Set up fixed voltage reference of 4.098V
     VREFCON0bits.FVREN = 1;
-    VREFCON0bits.FVRS = 11;
+    VREFCON0bits.FVRS = 0b11;
+    //VREFCON0bits.FVRST = 1;
+    
+    //VREFCON0 = 11110000;
     
     
     //Set up analog in for EGM on A0
@@ -118,12 +117,12 @@ void SysInit(void){
     ADCON1 = 0b00000000;  //VSS, VDD ref, AN0 analog
     ADCON2 = 0b00001000; //left justified
     ADCON2bits.ACQT=001; //2 TAD
-    ADCON2bits.ADCS=010; //FOSC/32tified, Tacq = 2Tad, Tad = 2*Tosc
+    ADCON2bits.ADCS=0b010; //FOSC/32tified, Tacq = 2Tad, Tad = 2*Tosc
     ADCON0bits.ADON = 0x01; //enable ADC module 
     
-    //Set up digital out for pulse (5V))
-    ANSELB = 0x00; //digital
-    TRISB = 0x00; //output
+    //Set up digital out for pulse (5V)) on B1
+    ANSELBbits.ANSB0 = 0; //digital
+    TRISBbits.RB0 = 0; //output
     
     //Set up timer1
     TMR1H  = One_Sec; 
@@ -135,8 +134,6 @@ void SysInit(void){
     PIE1bits.TMR1IE = 1;        // enable Timer 1 Interrupt
     INTCONbits.GIE=1;           // enable interrupts 
     T1CONbits.TMR1ON=1;         //Turn timer on
-    
-    //Set up timer2 //need to do this
 }
 
 void processV(void){
@@ -171,18 +168,19 @@ void processV(void){
     
     //if amplitude + slew rate passed threshold, stateV = 1  
     if(EGMVals[4]>ampThresh){   
-        LATBbits.LATB0 = 1; 
-        stateV = 1;
+        LATBbits.LATB0 = 1;
         if (slewAvg>slewThresh){
-            LATBbits.LATB1 = 1; 
-            //restart timer2
+            //LATBbits.LATB1 = 1; 
+            stateV = 1;
+            detected = 0;
         } else{
-            LATBbits.LATB1 = 0;
+            //LATBbits.LATB1 = 0;
+            stateV = 0;
         }
     } else {
         stateV = 0;
-        LATBbits.LATB0 = 0; //amplitude too low
-        LATBbits.LATB1 = 0; //slew rate too low
+        //LATBbits.LATB0 = 0; //amplitude too low
+        //LATBbits.LATB1 = 0; //slew rate too low
     }         
 }
 
@@ -191,27 +189,26 @@ void producePulse(void){  //this could be done on an interrupt?
     if(timer1==1 && stateV == 0){ //need to define expected
         //generate square pulse with PWM
         LATBbits.LATB0 = 1; //output to pin RB0, according to book ~0.1-2ms
-        timer2 = 0;
+        //timer2 = 0;
         Delay10TCYx(100); //every 100 = 1ms
         LATBbits.LATB0 = 0;
-        timer1 = 0; //set timer1 back to 0
+        timer1 = 0; //reset everything
+        detected = 0;
     }
     else{
-        timer2 = 0;
+        timer1 = 0;
         stateV = 0; //reset stateV back to 0
     }
 }
 
-void detect(void){  //check for values past threshold on digital output A4
-    CM1CON0bits.C1ON = 1; 
-    //while(VREFCON0bits.FVRST==0){}; //wait
+void detect(void){  //check for values past threshold on digital output A4 
     if(CM1CON0bits.C1OUT ==1){ //result of comparator 
         //Delay10TCYx(100); //every 100 = 1ms
         detected = 1;
         LATBbits.LATB0 = 1;
     }
     else {
-        LATBbits.LATB0 = 0;
         detected = 0; 
+        LATBbits.LATB0 = 0;
     }
 }
