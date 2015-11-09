@@ -52,11 +52,14 @@ void High_Priority_ISR(void){
 
 //Called every second by the interrupt
 void RTC_ISR (void){
-    if (PIR1bits.TMR1IF)            // If timer overflowed
+    if (INTCONbits.TMR0IF)            // If timer overflowed
     {
-        TMR1H  |= One_Sec;          // Reset timer to one second
+        producePulse();
+        //TMR1H  |= One_Sec;          // Reset timer to one second
+        TMR0H = 0;
+        TMR0L = 0;
         timer1 = 1;                 //this says that ventricular event has been detected 
-        PIR1bits.TMR1IF = 0;        // Clear timer flag
+        INTCONbits.TMR0IF = 0;        // Clear timer flag
         INTCONbits.INT0IF = 0;      // Clear interrupt flag
     }
 }
@@ -70,8 +73,10 @@ void main(void)
     stateV = 0;
     while(1)
     {     
-        T0CONbits.TMR0ON = 1;
+        //T0CONbits.TMR0ON = 1;
         //check for the signal from atrial processor
+        
+        /*
         detect();
         if (detected == 1){                       
             //check for normal ventricle signal
@@ -81,6 +86,8 @@ void main(void)
                 TMR0L = 0; 
             }  
         }
+         */
+         
         	
 	}
 }
@@ -94,21 +101,19 @@ void SysInit(void){
     TRISBbits.RB3 = 1; //B3 input
     
     //Set up comparator for hi-f signal detection  
-    //TRISAbits.RA4 = 0; // C1OUT = A4 output
-     
     CM1CON0bits.C1OE = 1; //enable output onto C1OUT (A4)
     CM1CON0bits.C1POL = 1; //inverted
     CM1CON0bits.C1SP = 1; //normal power mode
-    CM1CON0bits.C1R = 1; //Vin+ at FVR = 4.098V
+    CM1CON0bits.C1R = 1; //Vin+ at FVR 
     CM1CON0bits.C1CH = 0b10; //Vin- at C12IN2- pin (RB3)
     CM2CON1bits.C1RSEL = 1; //select FVR
     CM2CON1bits.MC1OUT = 1; 
     
     TRISAbits.RA4 = 0; //A4 (C1OUT) output
     
-    //Set up fixed voltage reference of 4.098V
+    //Set up fixed voltage reference of 2.048V
     VREFCON0bits.FVREN = 1;
-    VREFCON0bits.FVRS = 0b11;
+    VREFCON0bits.FVRS = 0b10;
     //VREFCON0bits.FVRST = 1;
     
     //VREFCON0 = 11110000;
@@ -133,11 +138,17 @@ void SysInit(void){
     TRISBbits.RB1 = 0;
     
     //Set up Timer0
-    T0CONbits.T08BIT = 1; //8-bit counter
+    T0CONbits.T08BIT = 0; //16-bit counter
     T0CONbits.T0CS = 0; //use instruction cycle clock
     T0CONbits.PSA = 0; //use prescaler
-    T0CONbits.T0PS = 100; //1:32 prescaler
-    
+    T0CONbits.T0PS = 0b001; //1:4 prescaler
+    TMR0H  = 0; 
+    TMR0L  = 0;
+    RCONbits.IPEN=1;            // Allow interrupt priorities
+    INTCONbits.TMR0IF = 0;        // Clear any pending Timer 0 Interrupt indication
+    INTCONbits.TMR0IE = 1;        // enable Timer 0 Interrupt
+    INTCONbits.GIE=1;           // enable interrupts 
+    T0CONbits.TMR0ON = 1; //enable timer0
     /*
     //Set up timer1
     TMR1H  = One_Sec; 
@@ -206,8 +217,9 @@ void producePulse(void){  //this could be done on an interrupt?
     //timer2 = 0;
     Delay10TCYx(100); //every 100 = 1ms
     LATBbits.LATB0 = 0;
-    T0CONbits.TMR0ON = 0; //disable timer
+    //T0CONbits.TMR0ON = 0; //disable timer
     TMR0L = 0; //reset everything
+    TMR0H = 0;
     detected = 0;
     stateV = 0;
 }
@@ -215,12 +227,15 @@ void producePulse(void){  //this could be done on an interrupt?
 void detect(void){  //check for values past threshold on digital output A4 
     CM1CON0bits.C1ON = 1;
     if(CM1CON0bits.C1OUT ==1){ //result of comparator 
-        //Delay10TCYx(100); //every 100 = 1ms
         detected = 1;
+        LATBbits.LATB1 =1;
         T0CONbits.TMR0ON = 1; //start timer0
     }
-    else {
+    else if (CM1CON0bits.C1OUT == 0) {
         detected = 0; 
+        LATBbits.LATB1 = 0;
+        LATAbits.LATA4 = 0;
     }
+    Delay10KTCYx(100); //1ms (i think)
     CM1CON0bits.C1ON = 0;
 }
