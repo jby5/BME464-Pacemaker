@@ -32,7 +32,8 @@ void main(void) {
         
         if (stateA == 1){
             output();
-        __delay_ms(300); //delay 300ms to "debounce"    
+            stateA = 0;
+        __delay_ms(200); //delay 200ms to "debounce"    
             
         }
         
@@ -70,7 +71,7 @@ void SysInit(void){
 void processA(void){ //ADC and calculation of slew rate/threshold
     
     int slewThresh = 0; 
-    int ampThresh = 2*255/5;  
+    int ampThresh = 4*255/5;  
     int dt = 1; //10ms
     int EGMVals[5];
     int slewVals[4];
@@ -89,33 +90,33 @@ void processA(void){ //ADC and calculation of slew rate/threshold
             slewSum += slewVals[i];
         }
         //slewVal = EGMVals[4]-EGMVals[0]; 
-        __delay_ms(5); 
+        __delay_ms(1); 
     }
 
     //calculate avg slew rate
-    //slewAvg = slewSum/4;
-    slewAvg = EGMVals[4] - EGMVals[0];
+    slewAvg = slewSum/4;
+    //slewAvg = EGMVals[4] - EGMVals[0];
     
     //if amplitude + slew rate passed threshold, stateA = 1  
     if(EGMVals[4]>ampThresh){   
         
         if (slewAvg>slewThresh){
             stateA = 1;
-            LATBbits.LATB0 = 1;
+            //LATBbits.LATB0 = 1;
         } else{
-            LATBbits.LATB0 = 0;
+            //LATBbits.LATB0 = 0;
             stateA = 0;
         }
     } else {
         stateA = 0;
-        LATBbits.LATB0 = 0; 
+        //LATBbits.LATB0 = 0; 
     }
               
 }
 
 void output(void){
     CCP3CONbits.CCP3M = 0b1100; //PWM mode enabled
-    __delay_ms(50); //delay needed for 10 cycles of PWM T 50kHz
+    __delay_ms(1); 
     CCP3CONbits.CCP3M = 0b0000; //PWM disabled
     LATAbits.LATA3 = 0;
 }
