@@ -13,10 +13,10 @@
 #pragma config XINST = OFF      // Instruction set Extension and indexed Addressing mode disabled
 
 //Define statements
-#define One_Sec  0x80 	//Load high byte of timer 1 with this for 1 second
+//#define One_Sec  0x80 	//Load high byte of timer 1 with this for 1 second
 // Timer 1 clock source is crystal oscillator on T1OS1/T1OS0, 1:1,
 // Dedicated enabled, Do Not Synch, Enable Timer1
-#define Timer1  0x89
+//#define Timer1  0x89
 
 //Variable definitions
 unsigned char A_thresh; //threshold for positive detection of atrial electrogram
@@ -52,12 +52,18 @@ void High_Priority_ISR(void){
 
 //Called every second by the interrupt
 void RTC_ISR (void){
-    if (PIR1bits.TMR1IF)            // If timer overflowed
+    if (INTCONbits.TMR0IF)            // If timer overflowed
     {
-        TMR1H  |= One_Sec;          // Reset timer to one second
+        producePulse();
+        //TMR1H  |= One_Sec;          // Reset timer to one second
+        T0CONbits.TMR0ON = 0;         // turn timer off
+        TMR0H = 0;
+        TMR0L = 0;
         timer1 = 1;                 //this says that ventricular event has been detected 
-        PIR1bits.TMR1IF = 0;        // Clear timer flag
+        
+        INTCONbits.TMR0IF = 0;        // Clear timer flag
         INTCONbits.INT0IF = 0;      // Clear interrupt flag
+        //INTCONbits.GIE=0;           // disable interrupts
     }
 }
 
@@ -70,17 +76,24 @@ void main(void)
     stateV = 0;
     while(1)
     {     
-        T0CONbits.TMR0ON = 1;
+        //T0CONbits.TMR0ON = 1;
+        
         //check for the signal from atrial processor
         detect();
         if (detected == 1){                       
             //check for normal ventricle signal
             processV(); 
+            
+            /*
             if (TMR0L > 60){ //"TOO LONG" VALUE = 24 cycles of timer0 (0.2s)
                 producePulse();
                 TMR0L = 0; 
-            }  
+            } 
+             */  
+             
         }
+         
+         
         	
 	}
 }
@@ -94,25 +107,21 @@ void SysInit(void){
     TRISBbits.RB3 = 1; //B3 input
     
     //Set up comparator for hi-f signal detection  
-    //TRISAbits.RA4 = 0; // C1OUT = A4 output
-     
-    CM1CON0bits.C1OE = 1; //enable output onto C1OUT (A4)
-    CM1CON0bits.C1POL = 1; //inverted
-    CM1CON0bits.C1SP = 1; //normal power mode
-    CM1CON0bits.C1R = 1; //Vin+ at FVR = 4.098V
-    CM1CON0bits.C1CH = 0b10; //Vin- at C12IN2- pin (RB3)
-    CM2CON1bits.C1RSEL = 1; //select FVR
-    CM2CON1bits.MC1OUT = 1; 
+    CM2CON0bits.C2OE = 1; //enable output onto C2OUT (A5)
+    CM2CON0bits.C2POL = 1; //inverted
+    CM2CON0bits.C2SP = 1; //normal power mode
+    CM2CON0bits.C2R = 1; //Vin+ at FVR 
+    CM2CON0bits.C2CH = 0b10; //Vin- at C12IN2- pin (RB3)
+    CM2CON1bits.C2RSEL = 1; //select FVR
+    CM2CON1bits.MC2OUT = 1; 
+    CM2CON1bits.C2SYNC = 0;
+    CM2CON0bits.C2OUT = 0;
     
-    TRISAbits.RA4 = 0; //A4 (C1OUT) output
+    TRISAbits.TRISA5 = 0; //A5 (C2OUT) output
     
-    //Set up fixed voltage reference of 4.098V
+    //Set up fixed voltage reference of 2.048V
     VREFCON0bits.FVREN = 1;
-    VREFCON0bits.FVRS = 0b11;
-    //VREFCON0bits.FVRST = 1;
-    
-    //VREFCON0 = 11110000;
-    
+    VREFCON0bits.FVRS = 0b10;
     
     //Set up analog in for EGM on A0
     ANSELAbits.ANSA0 = 1; //pin A0 is analog 
@@ -131,13 +140,22 @@ void SysInit(void){
     TRISBbits.RB0 = 0; //output
     ANSELBbits.ANSB1 = 0;
     TRISBbits.RB1 = 0;
+    ANSELBbits.ANSB2 = 0;
+    TRISBbits.RB2 = 0;
     
     //Set up Timer0
-    T0CONbits.T08BIT = 1; //8-bit counter
+    T0CONbits.T08BIT = 0; //16-bit counter
     T0CONbits.T0CS = 0; //use instruction cycle clock
     T0CONbits.PSA = 0; //use prescaler
-    T0CONbits.T0PS = 100; //1:32 prescaler
-    
+    T0CONbits.T0PS = 0b001; //1:4 prescaler
+    T0CONbits.TMR0ON = 0;
+    TMR0H  = 0; 
+    TMR0L  = 0;
+    RCONbits.IPEN=1;            // Allow interrupt priorities
+    INTCONbits.TMR0IF = 0;        // Clear any pending Timer 0 Interrupt indication
+    INTCONbits.TMR0IE = 1;        // enable Timer 0 overflow Interrupt
+     INTCONbits.GIE=1;           // enable interrupts
+
     /*
     //Set up timer1
     TMR1H  = One_Sec; 
@@ -154,7 +172,7 @@ void SysInit(void){
 
 void processV(void){
     int slewThresh = 0; 
-    int ampThresh = 3*255/5.5; //1V 
+    int ampThresh = 4*255/5.5; //1V 
     int dt = 1; //10ms
     int EGMVals[5];
     int slewVals[4];
@@ -170,57 +188,58 @@ void processV(void){
         
         if(i>0){
             slewVals[i] = (EGMVals[i]-EGMVals[i-1])/dt; //replace with correct pin    
-            //slewSum += slewVals[i];
+            slewSum += slewVals[i];
         }
-        
         //slewVal = EGMVals[4]-EGMVals[0]; 
-        Delay1KTCYx(5); //10ms 
+        Delay1KTCYx(1); //1ms 
     }
 
     //calculate avg slew rate
-    //slewAvg = slewSum/4;
-    slewAvg = EGMVals[4] - EGMVals[0];
+    slewAvg = slewSum/4;
+    //slewAvg = EGMVals[4] - EGMVals[0];
     
     //if amplitude + slew rate passed threshold, ventricle EGM detected/reset timer0, detected 
     if(EGMVals[4]>ampThresh){   
-        //LATBbits.LATB0 = 1;
         if (slewAvg>slewThresh){
-            LATBbits.LATB1 = 1; 
+            LATBbits.LATB2 = 1; 
             stateV = 0;
             detected = 0;
+            TMR0H = 0; //reset timer when detected
             TMR0L = 0;
-            T0CONbits.TMR0ON = 0;
+            T0CONbits.TMR0ON = 0; //disable timer when detected
         } else{
-            LATBbits.LATB1 = 0;
+            LATBbits.LATB2 = 0;
             
         }
     } else {
-        //LATBbits.LATB0 = 0; //amplitude too low
-        LATBbits.LATB1 = 0; //slew rate too low
+        LATBbits.LATB2 = 0; //slew rate too low
     }         
 }
 
 void producePulse(void){  //this could be done on an interrupt?
     //generate square pulse with PWM
     LATBbits.LATB0 = 1; //output to pin RB0, according to book ~0.1-2ms
-    //timer2 = 0;
+
     Delay10TCYx(100); //every 100 = 1ms
     LATBbits.LATB0 = 0;
-    T0CONbits.TMR0ON = 0; //disable timer
+    //T0CONbits.TMR0ON = 0; //disable timer
     TMR0L = 0; //reset everything
+    TMR0H = 0;
     detected = 0;
     stateV = 0;
 }
 
 void detect(void){  //check for values past threshold on digital output A4 
-    CM1CON0bits.C1ON = 1;
-    if(CM1CON0bits.C1OUT ==1){ //result of comparator 
-        //Delay10TCYx(100); //every 100 = 1ms
+    CM2CON0bits.C2ON = 1;
+    if(CM2CON0bits.C2OUT ==1){ //result of comparator 
         detected = 1;
-        T0CONbits.TMR0ON = 1; //start timer0
+        LATBbits.LATB1 =1;
+        T0CONbits.TMR0ON = 1; //start timer0 if detected
+        
     }
-    else {
-        detected = 0; 
+    else{ // if (CM1CON0bits.C1OUT == 0) {
+        //detected = 0; 
+        LATBbits.LATB1 = 0;
     }
     CM1CON0bits.C1ON = 0;
 }
