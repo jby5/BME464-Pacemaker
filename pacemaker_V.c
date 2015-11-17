@@ -19,15 +19,10 @@
 //#define Timer1  0x89
 
 //Variable definitions
-unsigned char A_thresh; //threshold for positive detection of atrial electrogram
-unsigned char V_thresh; //threshold for positive detection of ventricle electrogram
-unsigned char pulse_level; //generated pulse signal strength
 int stateV;
 int detected;  
-int timer1;
-int timer2; 
-int RP;
-int EGMmax;
+int slewThresh = 0; 
+int ampThresh = 3.7*255/5.5; 
 
 #define EGMThresh 
 //Function definitions
@@ -55,15 +50,12 @@ void RTC_ISR (void){
     if (INTCONbits.TMR0IF)            // If timer overflowed
     {
         producePulse();
-        //TMR1H  |= One_Sec;          // Reset timer to one second
         T0CONbits.TMR0ON = 0;         // turn timer off
         TMR0H = 0;
         TMR0L = 0;
-        timer1 = 1;                 //this says that ventricular event has been detected 
         
         INTCONbits.TMR0IF = 0;        // Clear timer flag
         INTCONbits.INT0IF = 0;      // Clear interrupt flag
-        //INTCONbits.GIE=0;           // disable interrupts
     }
 }
 
@@ -71,30 +63,16 @@ void RTC_ISR (void){
 void main(void)
 {
     SysInit();
-    timer2 = 0; //implement this w/ internal oscillator
-    timer1 = 0;
     stateV = 0;
     while(1)
-    {     
-        //T0CONbits.TMR0ON = 1;
-        
+    {   
         //check for the signal from atrial processor
         detect();
         if (detected == 1){                       
             //check for normal ventricle signal
             processV(); 
-            
-            /*
-            if (TMR0L > 60){ //"TOO LONG" VALUE = 24 cycles of timer0 (0.2s)
-                producePulse();
-                TMR0L = 0; 
-            } 
-             */  
              
         }
-         
-         
-        	
 	}
 }
 
@@ -121,7 +99,7 @@ void SysInit(void){
     
     //Set up fixed voltage reference of 2.048V
     VREFCON0bits.FVREN = 1;
-    VREFCON0bits.FVRS = 0b10;
+    VREFCON0bits.FVRS = 0b01;
     
     //Set up analog in for EGM on A0
     ANSELAbits.ANSA0 = 1; //pin A0 is analog 
@@ -154,7 +132,7 @@ void SysInit(void){
     RCONbits.IPEN=1;            // Allow interrupt priorities
     INTCONbits.TMR0IF = 0;        // Clear any pending Timer 0 Interrupt indication
     INTCONbits.TMR0IE = 1;        // enable Timer 0 overflow Interrupt
-     INTCONbits.GIE=1;           // enable interrupts
+    INTCONbits.GIE=1;           // enable interrupts
 
     /*
     //Set up timer1
@@ -171,9 +149,8 @@ void SysInit(void){
 }
 
 void processV(void){
-    int slewThresh = 0; 
-    int ampThresh = 4*255/5.5; //1V 
-    int dt = 1; //10ms
+    //slewThresh = 0; 
+    //ampThresh = 3.7*255/5.5; 
     int EGMVals[5];
     int slewVals[4];
     int slewSum = 0;
@@ -187,10 +164,9 @@ void processV(void){
         EGMVals[i] = ADRESH; //replace with correct pin
         
         if(i>0){
-            slewVals[i] = (EGMVals[i]-EGMVals[i-1])/dt; //replace with correct pin    
+            slewVals[i] = EGMVals[i]-EGMVals[i-1]; //replace with correct pin    
             slewSum += slewVals[i];
         }
-        //slewVal = EGMVals[4]-EGMVals[0]; 
         Delay1KTCYx(1); //1ms 
     }
 
@@ -198,31 +174,30 @@ void processV(void){
     slewAvg = slewSum/4;
     //slewAvg = EGMVals[4] - EGMVals[0];
     
-    //if amplitude + slew rate passed threshold, ventricle EGM detected/reset timer0, detected 
+    //if amplitude + slew rate passed threshold, ventricle EGM detected/reset timer0 
     if(EGMVals[4]>ampThresh){   
         if (slewAvg>slewThresh){
-            LATBbits.LATB2 = 1; 
+            //LATBbits.LATB2 = 1; 
             stateV = 0;
             detected = 0;
             TMR0H = 0; //reset timer when detected
             TMR0L = 0;
             T0CONbits.TMR0ON = 0; //disable timer when detected
         } else{
-            LATBbits.LATB2 = 0;
+            //LATBbits.LATB2 = 0;
             
         }
-    } else {
-        LATBbits.LATB2 = 0; //slew rate too low
+    } else {  //ventricular EGM not detected
+        //LATBbits.LATB2 = 0; 
     }         
 }
 
-void producePulse(void){  //this could be done on an interrupt?
+void producePulse(void){  
     //generate square pulse with PWM
     LATBbits.LATB0 = 1; //output to pin RB0, according to book ~0.1-2ms
 
-    Delay10TCYx(100); //every 100 = 1ms
+    Delay10TCYx(100); //1ms pulse
     LATBbits.LATB0 = 0;
-    //T0CONbits.TMR0ON = 0; //disable timer
     TMR0L = 0; //reset everything
     TMR0H = 0;
     detected = 0;
@@ -235,10 +210,8 @@ void detect(void){  //check for values past threshold on digital output A4
         detected = 1;
         LATBbits.LATB1 =1;
         T0CONbits.TMR0ON = 1; //start timer0 if detected
-        
     }
-    else{ // if (CM1CON0bits.C1OUT == 0) {
-        //detected = 0; 
+    else{ 
         LATBbits.LATB1 = 0;
     }
     CM1CON0bits.C1ON = 0;
