@@ -1,5 +1,5 @@
 /* BME 464 - Ventricle processor code 
- * Student: Jessica Yan
+ * Student: Jessica Yan              
  * PIC18F46K22 USED FOR THIS ELECTRODE
  */
 //#include "Lcd.h"
@@ -12,17 +12,13 @@
 #pragma config WDTEN = OFF      // Watch Dog Timer disabled. SWDTEN no effect
 #pragma config XINST = OFF      // Instruction set Extension and indexed Addressing mode disabled
 
-//Define statements
-//#define One_Sec  0x80 	//Load high byte of timer 1 with this for 1 second
-// Timer 1 clock source is crystal oscillator on T1OS1/T1OS0, 1:1,
-// Dedicated enabled, Do Not Synch, Enable Timer1
-//#define Timer1  0x89
-
 //Variable definitions
 int stateV;
 int detected;  
 int slewThresh = 0; 
-int ampThresh = 3.7*255/5.5; 
+int ampThresh = 3.5*255/5.5; 
+int PRhigh = 0x20; //change to adjust PR wait time 
+int PRlow = 0x1F; //change to adjust PR wait time
 
 #define EGMThresh 
 //Function definitions
@@ -51,8 +47,8 @@ void RTC_ISR (void){
     {
         producePulse();
         T0CONbits.TMR0ON = 0;         // turn timer off
-        TMR0H = 0;
-        TMR0L = 0;
+        TMR0H = PRhigh;
+        TMR0L = PRlow;
         
         INTCONbits.TMR0IF = 0;        // Clear timer flag
         INTCONbits.INT0IF = 0;      // Clear interrupt flag
@@ -127,8 +123,8 @@ void SysInit(void){
     T0CONbits.PSA = 0; //use prescaler
     T0CONbits.T0PS = 0b001; //1:4 prescaler
     T0CONbits.TMR0ON = 0;
-    TMR0H  = 0; 
-    TMR0L  = 0;
+    TMR0H  = PRhigh;  
+    TMR0L  = PRlow;
     RCONbits.IPEN=1;            // Allow interrupt priorities
     INTCONbits.TMR0IF = 0;        // Clear any pending Timer 0 Interrupt indication
     INTCONbits.TMR0IE = 1;        // enable Timer 0 overflow Interrupt
@@ -180,8 +176,8 @@ void processV(void){
             //LATBbits.LATB2 = 1; 
             stateV = 0;
             detected = 0;
-            TMR0H = 0; //reset timer when detected
-            TMR0L = 0;
+            TMR0H = PRhigh; //reset timer when detected
+            TMR0L = PRlow;
             T0CONbits.TMR0ON = 0; //disable timer when detected
         } else{
             //LATBbits.LATB2 = 0;
@@ -198,8 +194,8 @@ void producePulse(void){
 
     Delay10TCYx(100); //1ms pulse
     LATBbits.LATB0 = 0;
-    TMR0L = 0; //reset everything
-    TMR0H = 0;
+    TMR0L = PRhigh; //reset everything
+    TMR0H = PRlow;
     detected = 0;
     stateV = 0;
 }
