@@ -20,8 +20,8 @@ void SysInit(void);
 
 int detected; 
 int stateA;
-int slewThresh;
-int ampThresh;
+int slewThresh = 0;
+int ampThresh = 3.5*255/5;;
 
 void main(void) {
     stateA = 0;
@@ -66,9 +66,8 @@ void SysInit(void){
 }
 
 void processA(void){ //ADC and calculation of slew rate/threshold
-    slewThresh = 0;
-    ampThresh = 3.5*255/5;  
-    int dt = 1; //10ms
+    //slewThresh = 0;
+    //ampThresh = 3.5*255/5;  
     int EGMVals[3];
     int slewVals[2];
     int slewSum = 0;
@@ -83,7 +82,7 @@ void processA(void){ //ADC and calculation of slew rate/threshold
         ADRESL = 0;
         //ADCON0bits.GO = 0; //disable ADC
         if(i>0){
-            slewVals[i] = (EGMVals[i]-EGMVals[i-1])/dt; //replace with correct pin    
+            slewVals[i] = EGMVals[i]-EGMVals[i-1]; //replace with correct pin    
             slewSum += slewVals[i];
         }
         
