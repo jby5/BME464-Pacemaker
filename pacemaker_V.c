@@ -2,7 +2,7 @@
  * Student: Jessica Yan              
  * PIC18F46K22 USED FOR THIS ELECTRODE
  */
-//#include "Lcd.h"
+
 #include <delays.h>
 #include <p18f46k22.h>
 #include <stdio.h>
@@ -16,9 +16,9 @@
 int stateV;
 int detected;  
 int slewThresh = 0; 
-int ampThresh = 3.5*255/5.5; 
-int PRhigh = 0x20; //change to adjust PR wait time 
-int PRlow = 0x1F; //change to adjust PR wait time
+int ampThresh = 3.2*255/5; 
+int PRhigh = 0x01; //change to adjust PR wait time 
+int PRlow = 0x04; //change to adjust PR wait time
 
 #define EGMThresh 
 //Function definitions
@@ -130,23 +130,9 @@ void SysInit(void){
     INTCONbits.TMR0IE = 1;        // enable Timer 0 overflow Interrupt
     INTCONbits.GIE=1;           // enable interrupts
 
-    /*
-    //Set up timer1
-    TMR1H  = One_Sec; 
-    TMR1L  = 0;
-    T1CON  = Timer1;		    // Configure Timer 1, timer enabled
-    T1GCON = 0;                 // Timer 1 Gate function disabled
-    RCONbits.IPEN=1;            // Allow interrupt priorities
-    PIR1bits.TMR1IF = 0;        // Clear any pending Timer 1 Interrupt indication
-    PIE1bits.TMR1IE = 1;        // enable Timer 1 Interrupt
-    INTCONbits.GIE=1;           // enable interrupts 
-    T1CONbits.TMR1ON=1;         //Turn timer on
-     */
 }
 
 void processV(void){
-    //slewThresh = 0; 
-    //ampThresh = 3.7*255/5.5; 
     int EGMVals[5];
     int slewVals[4];
     int slewSum = 0;
@@ -168,31 +154,25 @@ void processV(void){
 
     //calculate avg slew rate
     slewAvg = slewSum/4;
-    //slewAvg = EGMVals[4] - EGMVals[0];
     
     //if amplitude + slew rate passed threshold, ventricle EGM detected/reset timer0 
     if(EGMVals[4]>ampThresh){   
-        if (slewAvg>slewThresh){
-            //LATBbits.LATB2 = 1; 
+        if (slewAvg>slewThresh){ 
             stateV = 0;
             detected = 0;
             TMR0H = PRhigh; //reset timer when detected
             TMR0L = PRlow;
             T0CONbits.TMR0ON = 0; //disable timer when detected
-        } else{
-            //LATBbits.LATB2 = 0;
-            
-        }
-    } else {  //ventricular EGM not detected
-        //LATBbits.LATB2 = 0; 
+        } 
     }         
 }
 
 void producePulse(void){  
-    //generate square pulse with PWM
+
     LATBbits.LATB0 = 1; //output to pin RB0, according to book ~0.1-2ms
 
     Delay10TCYx(100); //1ms pulse
+    
     LATBbits.LATB0 = 0;
     TMR0L = PRhigh; //reset everything
     TMR0H = PRlow;
