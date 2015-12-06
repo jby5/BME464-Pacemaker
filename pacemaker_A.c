@@ -3,10 +3,10 @@
  * Author: Jessica Yan
  *
  * Created on November 1, 2015, 1:36 AM
- * Last modified: 11/17/2015 4:50PM
+ * Last modified: 12/3/2015 4:50PM
 
  * 1. Detect atrial EGM by detecting slew rate + threshold
- * 2. if EGM detected, output 10 cycles of a 50kHz PWM signal 
+ * 2. if EGM detected, output 1ms of a 50kHz PWM signal 
  */
 
 #include <stdio.h>
@@ -21,7 +21,7 @@ void SysInit(void);
 int detected; 
 int stateA;
 int slewThresh = 0;
-int ampThresh = 3.5*255/5;;
+int ampThresh = 3.2*255/5;
 
 void main(void) {
     stateA = 0;
@@ -34,8 +34,7 @@ void main(void) {
         if (stateA == 1){
             output();
             stateA = 0;
-        __delay_ms(300); //delay 300ms to "debounce"    
-            
+       __delay_ms(300); //delay 300ms to "debounce"                
         }
     }
 }
@@ -66,21 +65,19 @@ void SysInit(void){
 }
 
 void processA(void){ //ADC and calculation of slew rate/threshold
-    //slewThresh = 0;
-    //ampThresh = 3.5*255/5;  
-    int EGMVals[3];
-    int slewVals[2];
+    int EGMVals[5];
+    int slewVals[4];
     int slewSum = 0;
     int i;
     int slewAvg;
     
     //ADC conversion and array storage
-    for(i=0; i<3; i++){
+    for(i=0; i<5; i++){
         ADCON0bits.GO = 1; 
         while(ADCON0bits.GO==0){}; //wait to finish conversion
         EGMVals[i] = ADRESH; //replace with correct pin
         ADRESL = 0;
-        //ADCON0bits.GO = 0; //disable ADC
+
         if(i>0){
             slewVals[i] = EGMVals[i]-EGMVals[i-1]; //replace with correct pin    
             slewSum += slewVals[i];
@@ -90,31 +87,26 @@ void processA(void){ //ADC and calculation of slew rate/threshold
     }
     
     //calculate avg slew rate
-    slewAvg = slewSum/2;
-    //slewAvg = EGMVals[3] - EGMVals[0];
+    slewAvg = slewSum/4;
     
     //if amplitude + slew rate passed threshold, stateA = 1  
-    
     if(EGMVals[2]>ampThresh){           
         stateA = 1;
         
         if (slewAvg>slewThresh){
             stateA = 1;
-            //LATBbits.LATB0 = 1;
         } else{
-            //LATBbits.LATB0 = 0;
             stateA = 0;
         }
     
     } else {
         stateA = 0;
-        //LATBbits.LATB0 = 0; 
     }              
 }
 
 void output(void){
     CCP3CONbits.CCP3M = 0b1100; //PWM mode enabled
-    __delay_ms(1); 
+    __delay_ms(1);
     CCP3CONbits.CCP3M = 0b0000; //PWM disabled
     LATAbits.LATA3 = 0;
 }
